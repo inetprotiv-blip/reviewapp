@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CineScore Mini App</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- HTML2Canvas для генерации карточки -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-color: #10b981;
+            --accent-hover: #059669;
+            --border-color: #334155;
+            --score-color: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 80px;
+        }
+
+        .screen {
+            display: none;
+            padding: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        .search-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-color);
+            font-size: 1rem;
+            outline: none;
+        }
+
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-top: 6px;
+            max-height: 250px;
+            overflow-y: auto;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .search-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+
+        .search-poster {
+            width: 38px;
+            height: 54px;
+            object-fit: cover;
+            border-radius: 6px;
+            background: #000;
+        }
+
+        .search-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .search-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .search-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .selected-media-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--card-bg);
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .selected-poster {
+            width: 50px;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .score-header {
+            position: sticky;
+            top: 0;
+            background: var(--bg-color);
+            padding: 12px 0;
+            z-index: 90;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 16px;
+        }
+
+        .score-circle-container {
+            position: relative;
+            width: 75px;
+            height: 75px;
+        }
+
+        .score-circle-svg {
+            transform: rotate(-90deg);
+            width: 75px;
+            height: 75px;
+        }
+
+        .score-circle-bg {
+            fill: none;
+            stroke: var(--border-color);
+            stroke-width: 6;
+        }
+
+        .score-circle-val {
+            fill: none;
+            stroke: var(--score-color);
+            stroke-width: 6;
+            stroke-dasharray: 220;
+            stroke-dashoffset: 0;
+            transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+        }
+
+        .score-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: var(--text-color);
+        }
+
+        .category-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .category-header {
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .category-body {
+            display: none;
+            padding: 0 16px 16px 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .category-card.open .category-body {
+            display: block;
+        }
+
+        .criterion-item {
+            margin-top: 12px;
+        }
+
+        .criterion-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+
+        .criterion-name {
+            color: var(--text-muted);
+        }
+
+        .criterion-value {
+            font-weight: 700;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            accent-color: var(--accent-color);
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--accent-color);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn-share {
+            background: #3b82f6;
+            margin-top: 8px;
+        }
+
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 200;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .nav-item.active {
+            color: var(--accent-color);
+        }
+
+        .profile-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid var(--border-color);
+        }
+
+        .profile-poster {
+            width: 45px;
+            height: 65px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+
+        .profile-details {
+            flex-grow: 1;
+            margin-left: 12px;
+        }
+
+        .profile-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .profile-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .profile-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .btn-action {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .btn-danger {
+            color: #ef4444;
+            border-color: #ef4444;
+        }
+
+        #exportCard {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 400px;
+            background: #0f172a;
+            color: #fff;
+            padding: 24px;
+            border-radius: 16px;
+            box-sizing: border-box;
+        }
+        .export-header { display: flex; gap: 16px; align-items: center; margin-bottom: 20px; }
+        .export-poster { width: 80px; height: 115px; border-radius: 8px; object-fit: cover; }
+        .export-title { font-size: 1.3rem; font-weight: 800; }
+        .export-meta { font-size: 0.85rem; color: #94a3b8; }
+        .export-score-box { display: flex; align-items: center; justify-content: space-between; background: #1e293b; padding: 14px; border-radius: 12px; margin-bottom: 16px; }
+        .export-groups { background: #1e293b; padding: 14px; border-radius: 12px; font-size: 0.9rem; }
+        .export-group-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .export-group-row:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body>
+
+    <div id="screen-rate" class="screen active">
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-input" placeholder="Поиск сериала или аниме..." autocomplete="off">
+            <div id="searchResults" class="search-results"></div>
+        </div>
+
+        <div id="selectedMedia" class="selected-media-card" style="display: none;">
+            <img id="selectedPoster" class="selected-poster" src="" alt="">
+            <div>
+                <div id="selectedTitle" style="font-weight: 700;"></div>
+                <div id="selectedMeta" style="font-size: 0.8rem; color: var(--text-muted);"></div>
+            </div>
+        </div>
+
+        <div class="score-header">
+            <div>
+                <h2 style="font-size: 1.1rem;">Итоговая оценка</h2>
+                <span id="scoreStatus" style="font-size: 0.85rem; color: var(--text-muted);">Заполните критерии</span>
+            </div>
+            <div class="score-circle-container">
+                <svg class="score-circle-svg" viewBox="0 0 80 80">
+                    <circle class="score-circle-bg" cx="40" cy="40" r="35"></circle>
+                    <circle id="scoreCircle" class="score-circle-val" cx="40" cy="40" r="35"></circle>
+                </svg>
+                <div id="finalScore" class="score-text">0.0</div>
+            </div>
+        </div>
+
+        <div id="categoriesContainer"></div>
+
+        <button id="saveBtn" class="btn">Сохранить оценку</button>
+        <button id="shareBtn" class="btn btn-share" style="display: none;">Поделиться в Telegram</button>
+    </div>
+
+    <div id="screen-profile" class="screen">
+        <h2 style="margin-bottom: 16px;">Мои оценки</h2>
+        <div id="ratingsList"></div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="switchScreen('rate')">
+            <span>Оценить</span>
+        </div>
+        <div class="nav-item" onclick="switchScreen('profile')">
+            <span>Профиль</span>
+        </div>
+    </div>
+
+    <!-- Шаблон скрытой карточки для генерации фото -->
+    <div id="exportCard">
+        <div class="export-header">
+            <img id="expPoster" class="export-poster" src="" alt="">
+            <div>
+                <div id="expTitle" class="export-title">Название</div>
+                <div id="expMeta" class="export-meta">Год • Жанры</div>
+            </div>
+        </div>
+        <div class="export-score-box">
+            <span>CineScore Оценка</span>
+            <span id="expScore" style="font-size: 1.8rem; font-weight: 900; color: #10b981;">0.0</span>
+        </div>
+        <div class="export-groups" id="expGroups"></div>
+    </div>
+
+<script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    const TMDB_API_KEY = '4c0f4fc1132924a214bf425564d0aedf';
+
+    const criteriaData = [
+        {
+            id: 'plot', name: '1. Сюжет и сценарий', weight: 0.30, items: [
+                { id: 'p1', name: 'Логика и проработка', max: 10 },
+                { id: 'p2', name: 'Динамика и темп', max: 10 },
+                { id: 'p3', name: 'Оригинальность и концепт', max: 10 },
+                { id: 'p4', name: 'Финал и развязка', max: 10 }
+            ]
+        },
+        {
+            id: 'characters', name: '2. Персонажи', weight: 0.25, items: [
+                { id: 'c1', name: 'Главный герой', max: 10 },
+                { id: 'c2', name: 'Второстепенные герои', max: 10 },
+                { id: 'c3', name: 'Антагонист / Конфликт', max: 10 },
+                { id: 'c4', name: 'Развитие персонажей (Арки)', max: 10 }
+            ]
+        },
+        {
+            id: 'atmosphere', name: '3. Атмосфера и Визуал', weight: 0.20, items: [
+                { id: 'a1', name: 'Режиссура и операторка', max: 10 },
+                { id: 'a2', name: 'Визуальный стиль / Анимация', max: 10 },
+                { id: 'a3', name: 'Саундтрек и звук', max: 10 },
+                { id: 'a4', name: 'Погружение и сеттинг', max: 10 }
+            ]
+        },
+        {
+            id: 'acting', name: '4. Актерка / Озвучка', weight: 0.15, items: [
+                { id: 'v1', name: 'Актерская игра / Сейю', max: 10 },
+                { id: 'v2', name: 'Попадание в образы', max: 10 },
+                { id: 'v3', name: 'Эмоциональный отклик', max: 10 }
+            ]
+        },
+        {
+            id: 'subjective', name: '5. Личный отклик', weight: 0.10, items: [
+                { id: 's1', name: 'Затягиваемость (Binge-factor)', max: 10 },
+                { id: 's2', name: 'Желание пересмотреть', max: 10 },
+                { id: 's3', name: 'Послевкусие', max: 10 }
+            ]
+        }
+    ];
+
+    let currentScores = {};
+    let selectedMediaData = null;
+    let savedRatings = JSON.parse(localStorage.getItem('cinescore_ratings') || '[]');
+
+    function initForm() {
+        const container = document.getElementById('categoriesContainer');
+        container.innerHTML = '';
+
+        criteriaData.forEach((cat) => {
+            const card = document.createElement('div');
+            card.className = 'category-card';
+            
+            let itemsHTML = '';
+            cat.items.forEach(item => {
+                currentScores[item.id] = 5;
+                itemsHTML += `
+                    <div class="criterion-item">
+                        <div class="criterion-info">
+                            <span class="criterion-name">${item.name}</span>
+                            <span class="criterion-value" id="val_${item.id}">5</span>
+                        </div>
+                        <input type="range" class="slider" min="0" max="${item.max}" value="5" 
+                               oninput="updateScore('${item.id}', this.value)">
+                    </div>
+                `;
+            });
+
+            card.innerHTML = `
+                <div class="category-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span>${cat.name}</span>
+                    <span id="avg_${cat.id}" style="color: var(--accent-color)">5.0</span>
+                </div>
+                <div class="category-body">${itemsHTML}</div>
+            `;
+            container.appendChild(card);
+        });
+        calculateTotal();
+    }
+
+    function updateScore(id, val) {
+        currentScores[id] = parseFloat(val);
+        document.getElementById(`val_${id}`).innerText = val;
+        calculateTotal();
+    }
+
+    function calculateTotal() {
+        let totalWeightedScore = 0;
+
+        criteriaData.forEach(cat => {
+            let catSum = 0;
+            cat.items.forEach(item => {
+                catSum += currentScores[item.id];
+            });
+            let catAvg = catSum / cat.items.length;
+            document.getElementById(`avg_${cat.id}`).innerText = catAvg.toFixed(1);
+            totalWeightedScore += catAvg * cat.weight;
+        });
+
+        const finalVal = totalWeightedScore.toFixed(1);
+        document.getElementById('finalScore').innerText = finalVal;
+
+        const circle = document.getElementById('scoreCircle');
+        const strokeDashoffset = 220 - (220 * (totalWeightedScore / 10));
+        circle.style.strokeDashoffset = strokeDashoffset;
+    }
+
+    // Поиск TMDB
+    let searchTimeout = null;
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        const query = e.target.value.trim();
+        if (query.length < 2) {
+            document.getElementById('searchResults').style.display = 'none';
+            return;
+        }
+        searchTimeout = setTimeout(() => searchTMDB(query), 400);
+    });
+
+    async function searchTMDB(query) {
+        try {
+            const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=ru-RU&query=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            showSearchResults(data.results || []);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function showSearchResults(results) {
+        const box = document.getElementById('searchResults');
+        box.innerHTML = '';
+        const filtered = results.filter(r => r.media_type === 'tv' || r.media_type === 'movie');
+
+        if (!filtered.length) {
+            box.style.display = 'none';
+            return;
+        }
+
+        filtered.slice(0, 5).forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'search-item';
+            const title = item.title || item.name;
+            const year = (item.release_date || item.first_air_date || '').split('-')[0];
+            const poster = item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '';
+
+            div.innerHTML = `
+                <img class="search-poster" src="${poster || 'https://via.placeholder.com/38x54?text=No+Img'}" alt="">
+                <div class="search-info">
+                    <span class="search-title">${title}</span>
+                    <span class="search-meta">${year} • ${item.media_type === 'tv' ? 'Сериал/Аниме' : 'Фильм'}</span>
+                </div>
+            `;
+
+            div.onclick = () => {
+                selectedMediaData = {
+                    title: title,
+                    year: year,
+                    poster: poster ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '',
+                    id: item.id
+                };
+                document.getElementById('selectedPoster').src = selectedMediaData.poster;
+                document.getElementById('selectedTitle').innerText = title;
+                document.getElementById('selectedMeta').innerText = year;
+                document.getElementById('selectedMedia').style.display = 'flex';
+                box.style.display = 'none';
+                document.getElementById('searchInput').value = '';
+            };
+
+            box.appendChild(div);
+        });
+        box.style.display = 'block';
+    }
+
+    // Сохранение оценки
+    document.getElementById('saveBtn').onclick = () => {
+        if (!selectedMediaData) {
+            alert('Сначала выберите сериал или аниме через поиск!');
+            return;
+        }
+        const record = {
+            id: Date.now(),
+            media: selectedMediaData,
+            score: document.getElementById('finalScore').innerText,
+            scores: { ...currentScores },
+            date: new Date().toLocaleDateString('ru-RU')
+        };
+        savedRatings.unshift(record);
+        localStorage.setItem('cinescore_ratings', JSON.stringify(savedRatings));
+        
+        document.getElementById('shareBtn').style.display = 'block';
+        alert('Оценка сохранена!');
+        renderProfile();
+    };
+
+    // Генерация текста и картинки конспекта
+    document.getElementById('shareBtn').onclick = async () => {
+        if (!selectedMediaData) return;
+        const score = document.getElementById('finalScore').innerText;
+
+        // Поготовка текста конспекта
+        let summaryText = `🎬 *${selectedMediaData.title}* (${selectedMediaData.year})\n`;
+        summaryText += `⭐ *Итоговая оценка:* ${score}/10\n\n`;
+        summaryText += `📊 *Детализация по критериям:*\n`;
+
+        criteriaData.forEach(cat => {
+            let sum = 0;
+            cat.items.forEach(i => sum += currentScores[i.id]);
+            const avg = (sum / cat.items.length).toFixed(1);
+            summaryText += `• ${cat.name}: ${avg}/10\n`;
+        });
+
+        // Отправка данных обратно в бота Telegram (если открыто в Mini App)
+        if (tg && tg.sendData) {
+            tg.sendData(JSON.stringify({
+                type: 'rating_result',
+                title: selectedMediaData.title,
+                score: score,
+                summary: summaryText
+            }));
+        } else {
+            // Если открыто просто в браузере — копируем конспект в буфер
+            navigator.clipboard.writeText(summaryText);
+            alert('Текст конспекта скопирован в буфер обмена!');
+        }
+    };
+
+    function renderProfile() {
+        const list = document.getElementById('ratingsList');
+        list.innerHTML = '';
+        if (!savedRatings.length) {
+            list.innerHTML = '<div style="color: var(--text-muted);">У вас пока нет сохраненных оценок.</div>';
+            return;
+        }
+        savedRatings.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'profile-card';
+            div.innerHTML = `
+                <img class="profile-poster" src="${item.media.poster || 'https://via.placeholder.com/45x65'}" alt="">
+                <div class="profile-details">
+                    <div class="profile-title">${item.media.title}</div>
+                    <div class="profile-meta">${item.media.year} • Оценка: ${item.score} • ${item.date}</div>
+                    <div class="profile-actions">
+                        <button class="btn-action btn-danger" onclick="deleteRating(${item.id})">Удалить</button>
+                    </div>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    function deleteRating(id) {
+        savedRatings = savedRatings.filter(r => r.id !== id);
+        localStorage.setItem('cinescore_ratings', JSON.stringify(savedRatings));
+        renderProfile();
+    }
+
+    function switchScreen(screen) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        if (screen === 'rate') {
+            document.getElementById('screen-rate').classList.add('active');
+            document.querySelectorAll('.nav-item')[0].classList.add('active');
+        } else {
+            document.getElementById('screen-profile').classList.add('active');
+            document.querySelectorAll('.nav-item')[1].classList.add('active');
+            renderProfile();
+        }
+    }
+
+    initForm();
+</script>
+</body>
+</html>
