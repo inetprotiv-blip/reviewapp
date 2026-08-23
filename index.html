@@ -19,6 +19,7 @@
             --accent-color: #10b981;
             --border-color: #334155;
             --score-color: #10b981;
+            --danger-color: #ef4444;
         }
 
         * {
@@ -228,6 +229,7 @@
 
         .btn-share { background: #3b82f6; margin-top: 8px; }
         .btn-file { background: #6366f1; margin-top: 8px; }
+        .btn-copy { background: #8b5cf6; margin-top: 8px; }
 
         .bottom-nav {
             position: fixed;
@@ -253,6 +255,23 @@
 
         .nav-item.active { color: var(--accent-color); }
 
+        /* Профиль карточки */
+        .profile-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .profile-poster { width: 50px; height: 75px; object-fit: cover; border-radius: 8px; }
+        .profile-info { flex: 1; }
+        .profile-actions { display: flex; gap: 8px; }
+        .btn-icon { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; }
+
+        /* Открытка экспорта */
         #exportCard {
             position: absolute;
             left: -9999px;
@@ -268,13 +287,26 @@
         .exp-title { font-size: 1.4rem; font-weight: 800; }
         .exp-score-box { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 14px; border-radius: 12px; margin-bottom: 14px; }
         .exp-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; }
+
+        /* Модальное окно просмотра картинки */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 300;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal img { max-width: 100%; max-height: 80vh; border-radius: 12px; }
     </style>
 </head>
 <body>
 
     <div id="screen-rate" class="screen active">
         <div class="search-container">
-            <input type="text" id="searchInput" class="search-input" placeholder="Поиск сериала или аниме..." autocomplete="off">
+            <input type="text" id="searchInput" class="search-input" placeholder="Поиск фильма, сериала или аниме..." autocomplete="off">
             <div id="searchResults" class="search-results"></div>
         </div>
 
@@ -310,6 +342,7 @@
         <button id="saveBtn" class="btn">Сохранить оценку</button>
         <button id="shareBtn" class="btn btn-share" style="display: none;">Поделиться картинкой</button>
         <button id="exportTxtBtn" class="btn btn-file" style="display: none;">Скачать подробный документ (.txt)</button>
+        <button id="copyTxtBtn" class="btn btn-copy" style="display: none;">📋 Скопировать разбор в буфер</button>
     </div>
 
     <div id="screen-profile" class="screen">
@@ -328,6 +361,7 @@
         </div>
     </div>
 
+    <!-- Шаблон генерации картинки -->
     <div id="exportCard">
         <div class="exp-header">
             <img id="expPoster" class="exp-poster" src="" alt="">
@@ -337,11 +371,17 @@
             </div>
         </div>
         <div class="exp-score-box">
-            <span style="font-weight: 700;">Итоговая оценка</span>
+            <span style="font-weight: 700;">Рейтинг</span>
             <span id="expScore" style="font-size: 1.8rem; font-weight: 900; color: #10b981;">0.0</span>
         </div>
         <div id="expGroups"></div>
     </div>
+
+    <!-- Модалка сгенерированной картинки -->
+    <div id="imageModal" class="modal" onclick="this.style.display='none'">
+        <img id="modalImg" src="" alt="Нажмите и удерживайте для сохранения">
+    </div>
+
 <script>
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
@@ -372,6 +412,7 @@
     let currentScores = {};
     let includeAntagonist = false;
     let selectedMediaData = null;
+    let editingId = null;
 
     function renderForm() {
         const container = document.getElementById('categoriesContainer');
@@ -496,6 +537,7 @@
                     year: year,
                     poster: poster ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : ''
                 };
+                editingId = null;
                 document.getElementById('selectedPoster').src = selectedMediaData.poster;
                 document.getElementById('selectedTitle').innerText = title;
                 document.getElementById('selectedMeta').innerText = year;
@@ -508,17 +550,103 @@
         box.style.display = 'block';
     }
 
+    // Сохранение в Профиль (localStorage)
     document.getElementById('saveBtn').onclick = () => {
         if (!selectedMediaData) {
             alert('Сначала выберите произведение через поиск!');
             return;
         }
+
+        let saved = JSON.parse(localStorage.getItem('my_reviews') || '[]');
+        const reviewItem = {
+            id: editingId || Date.now(),
+            media: selectedMediaData,
+            scores: { ...currentScores },
+            includeAntagonist: includeAntagonist,
+            finalScore: document.getElementById('finalScore').innerText,
+            date: new Date().toLocaleDateString('ru-RU')
+        };
+
+        if (editingId) {
+            saved = saved.map(item => item.id === editingId ? reviewItem : item);
+        } else {
+            saved.unshift(reviewItem);
+        }
+
+        localStorage.setItem('my_reviews', JSON.stringify(saved));
+        
         document.getElementById('shareBtn').style.display = 'block';
         document.getElementById('exportTxtBtn').style.display = 'block';
-        alert('Оценка успешно сохранена!');
+        document.getElementById('copyTxtBtn').style.display = 'block';
+
+        alert('Оценка успешно сохранена в профиль!');
+        renderProfile();
     };
 
-    // Генерация картинки
+    // Отрисовка Профиля
+    function renderProfile() {
+        const listContainer = document.getElementById('ratingsList');
+        const saved = JSON.parse(localStorage.getItem('my_reviews') || '[]');
+
+        if (saved.length === 0) {
+            listContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; margin-top: 40px;">У вас пока нет сохранённых оценок.</div>';
+            return;
+        }
+
+        listContainer.innerHTML = '';
+        saved.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'profile-card';
+            card.innerHTML = `
+                <img class="profile-poster" src="${item.media.poster || 'https://via.placeholder.com/50x75'}" alt="">
+                <div class="profile-info">
+                    <div style="font-weight: 700; font-size: 1rem;">${item.media.title} (${item.media.year})</div>
+                    <div style="font-size: 0.85rem; color: var(--accent-color); font-weight: 700;">Оценка: ${item.finalScore} / 10</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">${item.date}</div>
+                </div>
+                <div class="profile-actions">
+                    <button class="btn-icon" onclick="editReview(${item.id})"><i data-lucide="edit-2"></i></button>
+                    <button class="btn-icon" style="color: var(--danger-color)" onclick="deleteReview(${item.id})"><i data-lucide="trash-2"></i></button>
+                </div>
+            `;
+            listContainer.appendChild(card);
+        });
+        lucide.createIcons();
+    }
+
+    function editReview(id) {
+        const saved = JSON.parse(localStorage.getItem('my_reviews') || '[]');
+        const target = saved.find(item => item.id === id);
+        if (!target) return;
+
+        selectedMediaData = target.media;
+        currentScores = { ...target.scores };
+        includeAntagonist = target.includeAntagonist;
+        editingId = target.id;
+
+        document.getElementById('selectedPoster').src = selectedMediaData.poster;
+        document.getElementById('selectedTitle').innerText = selectedMediaData.title;
+        document.getElementById('selectedMeta').innerText = selectedMediaData.year;
+        document.getElementById('selectedMedia').style.display = 'flex';
+        document.getElementById('antagonistToggle').checked = includeAntagonist;
+
+        document.getElementById('shareBtn').style.display = 'block';
+        document.getElementById('exportTxtBtn').style.display = 'block';
+        document.getElementById('copyTxtBtn').style.display = 'block';
+
+        renderForm();
+        switchScreen('rate');
+    }
+
+    function deleteReview(id) {
+        if (!confirm('Удалить эту оценку из профиля?')) return;
+        let saved = JSON.parse(localStorage.getItem('my_reviews') || '[]');
+        saved = saved.filter(item => item.id !== id);
+        localStorage.setItem('my_reviews', JSON.stringify(saved));
+        renderProfile();
+    }
+
+    // Экспорт Картинки
     document.getElementById('shareBtn').onclick = async () => {
         if (!selectedMediaData) return;
 
@@ -540,21 +668,18 @@
         
         canvas.toBlob(blob => {
             const file = new File([blob], `${selectedMediaData.title}_review.png`, { type: "image/png" });
-            if (navigator.share) {
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 navigator.share({ files: [file], title: selectedMediaData.title });
             } else {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${selectedMediaData.title}_review.png`;
-                a.click();
+                const modalImg = document.getElementById('modalImg');
+                modalImg.src = canvas.toDataURL();
+                document.getElementById('imageModal').style.display = 'flex';
             }
         });
     };
 
-    // Экспорт текстового документа (.txt) со всеми подпунктами
-    document.getElementById('exportTxtBtn').onclick = () => {
-        if (!selectedMediaData) return;
-
+    // Генерация текста
+    function generateTxtReport() {
         let content = `=====================================\n`;
         content += `ОБЗОР И ОЦЕНКА: ${selectedMediaData.title} (${selectedMediaData.year})\n`;
         content += `ИТОГОВЫЙ БАЛЛ: ${document.getElementById('finalScore').innerText} / 10\n`;
@@ -572,12 +697,29 @@
             });
             content += `\n`;
         });
+        return content;
+    }
 
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    // Экспорт `.txt`
+    document.getElementById('exportTxtBtn').onclick = () => {
+        if (!selectedMediaData) return;
+        const text = generateTxtReport();
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `${selectedMediaData.title}_полный_разбор.txt`;
+        a.download = `${selectedMediaData.title}_разбор.txt`;
         a.click();
+    };
+
+    // Копирование разбора в буфер
+    document.getElementById('copyTxtBtn').onclick = () => {
+        if (!selectedMediaData) return;
+        const text = generateTxtReport();
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Полный текстовый разбор скопирован в буфер обмена!');
+        }).catch(() => {
+            alert('Ошибка копирования');
+        });
     };
 
     function switchScreen(screen) {
@@ -589,11 +731,13 @@
         } else {
             document.getElementById('screen-profile').classList.add('active');
             document.querySelectorAll('.nav-item')[1].classList.add('active');
+            renderProfile();
         }
     }
 
     lucide.createIcons();
     renderForm();
+    renderProfile();
 </script>
 </body>
 </html>
